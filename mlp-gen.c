@@ -1,161 +1,78 @@
-#include "autodiff.c" // XXX make it so single-header lib
-
-#include <math.h>
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 
-#define INDENT "  "
+int main(void) {
+  struct tensor *l0 = COL_TENSOR(tensor_nans((shape_t){784}));
 
-void matnan(int m, int n, struct node *out[m][n]) {
-  for (int j = 0; j < n; j++)
-    for (int i = 0; i < m; i++)
-      out[i][j] = LIT(NAN);
-}
+  struct tensor *b1 = COL_TENSOR(tensor_nans((shape_t){64}));
+  struct tensor *w1 = tensor_nans((shape_t){*b1->shape, *l0->shape});
+  struct tensor *l1 =
+      tensor_unop(RELU, tensor_binop(ADD, b1, tensor_matmul(w1, l0)));
 
-void matmul(int m, int n, int o, struct node *lhs[m][n], struct node *rhs[n][o],
-            struct node *out[m][o]) {
-  for (int k = 0; k < o; k++) {
-    for (int i = 0; i < m; i++) {
-      out[i][k] = LIT(0.0);
-      for (int j = 0; j < n; j++)
-        out[i][k] = ADD(out[i][k], MUL(lhs[i][j], rhs[j][k]));
-    }
-  }
-}
+  struct tensor *b2 = COL_TENSOR(tensor_nans((shape_t){32}));
+  struct tensor *w2 = tensor_nans((shape_t){*b2->shape, *l1->shape});
+  struct tensor *l2 =
+      tensor_unop(RELU, tensor_binop(ADD, b2, tensor_matmul(w2, l1)));
 
-void matunop(int m, int n, struct node *lhs[m][n],
-             struct node *(*unop)(struct node *lhs), struct node *out[m][n]) {
-  for (int j = 0; j < n; j++)
-    for (int i = 0; i < m; i++)
-      out[i][j] = unop(lhs[i][j]);
-}
+  struct tensor *b3 = COL_TENSOR(tensor_nans((shape_t){10}));
+  struct tensor *w3 = tensor_nans((shape_t){*b3->shape, *l2->shape});
+  struct tensor *l3 =
+      tensor_softmax(tensor_binop(ADD, b3, tensor_matmul(w3, l2)));
 
-void matbinop(int m, int n, struct node *lhs[m][n], struct node *rhs[m][n],
-              struct node *(*binop)(struct node *lhs, struct node *rhs),
-              struct node *out[m][n]) {
-  for (int j = 0; j < n; j++)
-    for (int i = 0; i < m; i++)
-      out[i][j] = binop(lhs[i][j], rhs[i][j]);
-}
+  struct tensor *x = l0, *yh = l3;
+  struct tensor *y = tensor_nans(yh->shape);
+  struct node *c = tensor_crossentropy(y, yh);
 
-struct node *mataccum(int m, int n, struct node *mat[m][n],
-                      struct node *(*binop)(struct node *lhs, struct node *rhs),
-                      struct node *e) {
-  struct node *accum = e;
-  for (int j = 0; j < n; j++)
-    for (int i = 0; i < m; i++)
-      accum = binop(accum, mat[i][j]);
-  return accum;
-}
+  struct tensor *w =
+      tensor_combine((struct tensor *[]){w1, w2, w3, b1, b2, b3, NULL});
 
-struct node *sigmoid(struct node *x) { return INV(ADD(LIT(1.0), EXP(NEG(x)))); }
-
-// TODO test
-struct node *tanh_(struct node *x) {
-  struct node *exp_2x = EXP(ADD(x, x));
-  return DIV(SUB(exp_2x, LIT(1.0)), ADD(exp_2x, LIT(2.0)));
-}
-
-// TODO make other demos? matrix factorization, xor, curve fitting
-
-int main(int argc, char **argv) {
-  static struct mlp {
-    struct x {
-      struct node *x[784];
-      struct node *yh[10];
-    } x;
-    struct w {
-      struct node *w1[16][784];
-      struct node *w2[16][16];
-      struct node *w3[10][16];
-      struct node *b1[16];
-      struct node *b2[16];
-      struct node *b3[10];
-    } w;
-    struct l {
-      struct node *l1[16];
-      struct node *l2[16];
-      struct node *l3[10];
-    } l;
-    struct node *c;
-  } mlp;
-
-  // XXX UB?
-  struct node **params = (struct node **)mlp.w.w1;
-  struct node **outs = (struct node **)mlp.l.l3;
-
-  matnan(784, 1, &mlp.x.x);
-  matnan(10, 1, &mlp.x.yh);
-
-  matnan(16, 784, mlp.w.w1);
-  matnan(16, 1, &mlp.w.b1);
-  matmul(16, 784, 1, mlp.w.w1, &mlp.x.x, &mlp.l.l1);
-  matbinop(16, 1, &mlp.w.b1, &mlp.l.l1, ADD, &mlp.l.l1);
-  matunop(16, 1, &mlp.l.l1, sigmoid, &mlp.l.l1);
-
-  matnan(16, 16, mlp.w.w2);
-  matnan(16, 1, &mlp.w.b2);
-  matmul(16, 16, 1, mlp.w.w2, &mlp.l.l1, &mlp.l.l2);
-  matbinop(16, 1, &mlp.w.b2, &mlp.l.l2, ADD, &mlp.l.l2);
-  matunop(16, 1, &mlp.l.l2, sigmoid, &mlp.l.l2);
-
-  matnan(10, 16, mlp.w.w3);
-  matnan(10, 1, &mlp.w.b3);
-  matmul(10, 16, 1, mlp.w.w3, &mlp.l.l2, &mlp.l.l3);
-  matbinop(10, 1, &mlp.w.b3, &mlp.l.l3, ADD, &mlp.l.l3);
-  matunop(10, 1, &mlp.l.l3, sigmoid, &mlp.l.l3);
-
-  struct node *mse[10];
-  matbinop(10, 1, &mlp.x.yh, &mlp.l.l3, SUB, &mse);
-  matbinop(10, 1, &mse, &mse, MUL, &mse);
-  mlp.c = DIV(mataccum(10, 1, &mse, ADD, LIT(0.0)), LIT(10.0));
-
-  int visited = 0;
-  FILE *fp = fopen(argv[1], "w"); // XXX bounds check
-  if (fp == NULL)
+  FILE *c_fp = fopen("mlp.c", "w");
+  if (c_fp == NULL)
+    perror("fopen"), exit(EXIT_FAILURE);
+  FILE *h_fp = fopen("mlp.h", "w");
+  if (h_fp == NULL)
     perror("fopen"), exit(EXIT_FAILURE);
 
-  fprintf(fp, "#include <math.h>\n\n");
+  int visited = 0;
+  fprintf(c_fp, "#include \"mlp.h\"\n");
+  fprintf(c_fp, "#include <math.h>\n");
 
-  fprintf(fp, "void predict(double x[], double w[], double y[]) {\n");
-  for (int i = 0; i < 784; i++)
-    fprintf(fp, INDENT "double t%d = x[%d];\n", mlp.x.x[i]->id, i);
-  for (int i = 0; i < 16 * 784 + 16 * 16 + 10 * 16 + 16 + 16 + 10; i++)
-    fprintf(fp, INDENT "double t%d = w[%d];\n", params[i]->id, i);
-  putc('\n', fp);
+  fprintf(h_fp, "typedef double x_t[%zd];\n", shape_size(x->shape));
+  fprintf(h_fp, "typedef double w_t[%zd];\n", shape_size(w->shape));
+  fprintf(h_fp, "typedef double yh_t[%zd];\n", shape_size(yh->shape));
+  fprintf(h_fp, "void predict(x_t x, w_t w, yh_t yh);\n");
+  fprintf(c_fp, "void predict(x_t x, w_t w, yh_t yh) {\n");
+  TENSOR_FOR(x) fprintf(c_fp, "double t%d = x[%zd];\n", node->id, idx);
+  TENSOR_FOR(w) fprintf(c_fp, "double t%d = w[%zd];\n", node->id, idx);
+  putc('\n', c_fp);
   ++visited;
-  for (int i = 0; i < 10; i++)
-    node_gen(fp, outs[i], visited);
-  putc('\n', fp);
-  for (int i = 0; i < 10; i++)
-    fprintf(fp, INDENT "y[%d] = t%d;\n", i, outs[i]->id);
-  fprintf(fp, "}\n\n");
+  TENSOR_FOR(yh) node_gen(c_fp, "double t%d = ", "t%d", node, visited);
+  putc('\n', c_fp);
+  TENSOR_FOR(yh) fprintf(c_fp, "yh[%zd] = t%d;\n", idx, node->id);
+  fprintf(c_fp, "}\n\n");
 
-  for (int i = 0; i < 16 * 784 + 16 * 16 + 10 * 16 + 16 + 16 + 10; i++)
-    params[i]->grad = LIT(0.0);
-  mlp.c->grad = LIT(1.0);
-  node_grad(mlp.c, ++visited);
+  TENSOR_FOR(w) node->grad = LIT(0.0);
+  c->grad = LIT(1.0), node_grad(c, ++visited);
 
-  fprintf(fp, "void backprop(double x[], double w[],"
-              "double yh[], double dw[], double *c) {\n");
-  for (int i = 0; i < 784; i++)
-    fprintf(fp, INDENT "double t%d = x[%d];\n", mlp.x.x[i]->id, i);
-  for (int i = 0; i < 16 * 784 + 16 * 16 + 10 * 16 + 16 + 16 + 10; i++)
-    fprintf(fp, INDENT "double t%d = w[%d];\n", params[i]->id, i);
-  for (int i = 0; i < 10; i++)
-    fprintf(fp, INDENT "double t%d = yh[%d];\n", mlp.x.yh[i]->id, i);
-  putc('\n', fp);
-  node_gen(fp, mlp.c, ++visited);
-  for (int i = 0; i < 16 * 784 + 16 * 16 + 10 * 16 + 16 + 16 + 10; i++)
-    node_gen(fp, params[i]->grad, visited);
-  putc('\n', fp);
-  fprintf(fp, INDENT "*c += t%d;\n", mlp.c->id);
-  for (int i = 0; i < 16 * 784 + 16 * 16 + 10 * 16 + 16 + 16 + 10; i++)
-    fprintf(fp, INDENT "dw[%d] += t%d;\n", i, params[i]->grad->id);
-  fprintf(fp, "}\n");
+  fprintf(h_fp, "typedef double y_t[%zd];\n", shape_size(y->shape));
+  fprintf(h_fp, "typedef double dw_t[%zd];\n", shape_size(w->shape));
+  fprintf(h_fp, "typedef double *c_t;\n");
+  fprintf(h_fp, "void backprop(x_t x, w_t w, y_t y, dw_t dw, c_t c);\n");
+  fprintf(c_fp, "void backprop(x_t x, w_t w, y_t y, dw_t dw, c_t c) {\n");
+  TENSOR_FOR(x) fprintf(c_fp, "double t%d = x[%zd];\n", node->id, idx);
+  TENSOR_FOR(w) fprintf(c_fp, "double t%d = w[%zd];\n", node->id, idx);
+  TENSOR_FOR(y) fprintf(c_fp, "double t%d = y[%zd];\n", node->id, idx);
+  putc('\n', c_fp);
+  node_gen(c_fp, "double t%d = ", "t%d", c, ++visited);
+  TENSOR_FOR(w) node_gen(c_fp, "double t%d = ", "t%d", node->grad, visited);
+  putc('\n', c_fp);
+  fprintf(c_fp, "*c += t%d;\n", c->id);
+  TENSOR_FOR(w) fprintf(c_fp, "dw[%zd] += t%d;\n", idx, node->grad->id);
+  fprintf(c_fp, "}\n");
 
-  if (fclose(fp) == EOF)
+  if (fclose(c_fp) == EOF)
     perror("fclose"), exit(EXIT_FAILURE);
 
-  // node_free(node_ll); // XXX run against asan
+  // XXX doc no free
 }
