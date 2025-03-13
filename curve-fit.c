@@ -1,4 +1,6 @@
-#include "utils.h"
+#include "lib/autodiff.h"
+#include "lib/tensor.h"
+#include "lib/utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>

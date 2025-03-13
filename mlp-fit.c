@@ -3,43 +3,110 @@
 #include <stdlib.h>
 #include <time.h>
 
-// // faster
-// #define ETA 0.05    // learning rate
-// #define BETA 0.9    // momentum coefficient
-// #define LAMBDA 0.0  // regularization rate
-// #define BATCH 100   // mini-batch size
-// #define EPOCHS 1000 // number of epochs
+// // faster (90% accuracy)
+// #define ETA 0.05   // learning rate
+// #define BETA 0.9   // momentum coefficient
+// #define LAMBDA 0.0 // regularization rate
+// #define BATCH 100  // mini-batch size
+// #define EPOCHS 500 // number of epochs
 
-// slower
+// slower (96% accuracy)
 #define ETA 0.01     // learning rate
 #define BETA 0.9     // momentum coefficient
 #define LAMBDA 0.0   // regularization rate
 #define BATCH 250    // mini-batch size
 #define EPOCHS 10000 // number of epochs
 
+#define TRAIN_OFST 16
+#define TRAIN_LEN 60000
+#define TRAIN_PATHS                                                            \
+  "MNIST/train-images.idx3-ubyte", "MNIST/train-labels.idx1-ubyte"
+#define TEST_OFST 8
+#define TEST_LEN 10000
+#define TEST_PATHS                                                             \
+  "MNIST/t10k-images.idx3-ubyte", "MNIST/t10k-labels.idx1-ubyte"
+
 #define ARRAY_FOR(ARRAY)                                                       \
-  for (size_t idx = 0; idx < sizeof(ARRAY) / sizeof(*ARRAY); idx++)            \
-    for (double elem = ARRAY[idx], *e = &elem; e; ARRAY[idx] = elem, e = NULL)
+  for (size_t idx = 0; idx < sizeof(ARRAY) / sizeof(*(ARRAY)); idx++)          \
+    for (double elem = (ARRAY)[idx], *_p = &elem; _p;                          \
+         (ARRAY)[idx] = elem, _p = NULL)
+
+struct ex {
+  x_t x;
+  y_t y;
+};
+
+struct ex *load_mnist(char *x_path, char *y_path, size_t n) {
+  FILE *x_fp = fopen(x_path, "r");
+  if (x_fp == NULL)
+    perror("fopen"), exit(EXIT_FAILURE);
+  if (fseek(x_fp, TRAIN_OFST, SEEK_SET) == EOF)
+    perror("fseek"), exit(EXIT_FAILURE);
+
+  FILE *y_fp = fopen(y_path, "r");
+  if (y_fp == NULL)
+    perror("fopen"), exit(EXIT_FAILURE);
+  if (fseek(y_fp, TEST_OFST, SEEK_SET) == EOF)
+    perror("fseek"), exit(EXIT_FAILURE);
+
+  struct ex *exs = malloc(sizeof(*exs) * n);
+
+  int chr;
+  for (size_t i = 0; i < n; i++) {
+    struct ex *ex = exs + i;
+
+    if ((chr = fgetc(y_fp)) == EOF)
+      perror("fgetc"), exit(EXIT_FAILURE);
+    if (chr >= sizeof(ex->y) / sizeof(*ex->y))
+      abort();
+    ARRAY_FOR(ex->y) elem = 0.0;
+    ex->y[chr] = 1.0;
+
+    ARRAY_FOR(ex->x) {
+      if ((chr = fgetc(x_fp)) == EOF)
+        perror("fgetc"), exit(EXIT_FAILURE);
+      elem = (double)chr / 256.0;
+    }
+  }
+
+  if (fclose(x_fp) == EOF)
+    perror("fclose"), exit(EXIT_FAILURE);
+
+  if (fclose(y_fp) == EOF)
+    perror("fclose"), exit(EXIT_FAILURE);
+
+  return exs;
+}
+
+int mnist_y_to_yi(y_t y) {
+  int yi = 0;
+  for (int i = 0; i < sizeof(y_t) / sizeof(*y); i++)
+    yi = y[i] > y[yi] ? i : yi;
+  return yi;
+}
+
+void mnist_x_dump(x_t x) {
+  for (int j = 0; j < 28; j += 2) {
+    for (int i = 0; i < 28; i++)
+      putchar(" .,+*o%@"[(int)(x[28 * j + i] * 8.0)]);
+    putchar('\n');
+  }
+}
+
+void mnist_y_dump(y_t y) {
+  for (int i = 0; i < sizeof(y_t) / sizeof(*y); i++)
+    printf("%f ", y[i]);
+  putchar('\n');
+}
 
 int main(void) {
   srand(time(NULL));
 
-  FILE *x_fp = fopen("MNIST/train-images.idx3-ubyte", "r");
-  if (x_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
-  if (fseek(x_fp, 16, SEEK_SET) == EOF)
-    perror("fseek"), exit(EXIT_FAILURE);
+  struct ex *train_exs = load_mnist(TRAIN_PATHS, TRAIN_LEN);
+  struct ex *test_exs = load_mnist(TEST_PATHS, TEST_LEN);
 
-  FILE *y_fp = fopen("MNIST/train-labels.idx1-ubyte", "r");
-  if (y_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
-  if (fseek(y_fp, 8, SEEK_SET) == EOF)
-    perror("fseek"), exit(EXIT_FAILURE);
-
-  static x_t x;
   static w_t w;
   static yh_t yh;
-  static y_t y;
   static dw_t dw;
   c_t c = &(double){0.0};
   static dw_t v;
@@ -52,12 +119,8 @@ int main(void) {
     *c = 0.0;
 
     for (int batch = 0; batch < BATCH; batch++) {
-      ARRAY_FOR(x) elem = (double)fgetc(x_fp) / 256;
-      ARRAY_FOR(y) elem = 0.0;
-      int yi = fgetc(y_fp); // XXX bounds check
-      y[yi] = 1.0;
-
-      backprop(x, w, y, dw, c);
+      struct ex *ex = train_exs + rand() % TRAIN_LEN;
+      mlp_backprop(ex->x, w, ex->y, dw, c);
     }
 
     *c /= BATCH;
@@ -67,75 +130,28 @@ int main(void) {
     ARRAY_FOR(v) elem = elem * BETA - ETA * dw[idx]; // momentum
     ARRAY_FOR(w) elem += v[idx];                     // gradient descent
 
-    printf("epoch %d of %d; loss %f %*.s@\n", epoch, EPOCHS, *c, (int)(*c * 64),
-           "");
-
-    // XXX hacky as hell
-    if (ftell(y_fp) >= 50000) {
-      int ofst = rand() % 128;
-      fseek(x_fp, 16 + 784 * ofst, SEEK_SET);
-      fseek(y_fp, 8 + ofst, SEEK_SET);
-    }
+    printf("epoch %d of %d; loss %f", epoch, EPOCHS, *c);
+    printf("%*s\n", (int)(*c * 64), "#");
   }
 
-  if (fclose(x_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
+  double accuracy = 0.0;
 
-  if (fclose(y_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
+  for (int i = 0; i < TEST_LEN; i++) {
+    struct ex *ex = test_exs + i;
+    mlp_predict(ex->x, w, yh);
 
-  // x_fp = fopen("MNIST/train-images.idx3-ubyte", "r");
-  x_fp = fopen("MNIST/t10k-images.idx3-ubyte", "r");
-  if (x_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
-  if (fseek(x_fp, 16, SEEK_SET) == EOF)
-    perror("fseek"), exit(EXIT_FAILURE);
+    int correct = mnist_y_to_yi(yh) == mnist_y_to_yi(ex->y);
+    accuracy += (double)correct / TEST_LEN;
 
-  // y_fp = fopen("MNIST/train-labels.idx1-ubyte", "r");
-  y_fp = fopen("MNIST/t10k-labels.idx1-ubyte", "r");
-  if (y_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
-  if (fseek(y_fp, 8, SEEK_SET) == EOF)
-    perror("fseek"), exit(EXIT_FAILURE);
-
-  // XXX hacky as hell
-  const int total = 10000;
-  int correct = 0;
-
-  // XXX code dup
-  for (int batch = 0; batch < total; batch++) {
-    ARRAY_FOR(x) elem = (double)fgetc(x_fp) / 256;
-    ARRAY_FOR(y) elem = 0.0;
-    int yi = fgetc(y_fp); // XXX bounds check
-    y[yi] = 1.0;
-
-    predict(x, w, yh);
-    int yhi = 0;
-    ARRAY_FOR(yh) if (elem > yh[yhi]) yhi = idx;
-    correct += yhi == yi;
-
-    if (yi == yhi)
+    if (correct)
       continue;
 
-    printf("yh = ");
-    ARRAY_FOR(yh) printf("%f ", elem);
-    putchar('\n');
-    printf("yhi = %d\n", yhi);
-    printf("yi = %d\n", yi);
-    ARRAY_FOR(x) {
-      char ch = " .,+*o%@"[(int)(elem * 8)];
-      putchar(ch), putchar(ch);
-      (idx + 1) % 28 || putchar('\n');
-    }
+    printf("yh  = "), mnist_y_dump(yh);
+    printf("y   = "), mnist_y_dump(ex->y);
+    printf("yhi = %d\n", mnist_y_to_yi(yh));
+    printf("yi  = %d\n", mnist_y_to_yi(ex->y));
+    mnist_x_dump(ex->x);
   }
 
-  printf("MNIST accuracy: %f\n", (double)correct / total);
-
-  if (fclose(x_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
-
-  if (fclose(y_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
-
-  return 0;
+  printf("MNIST accuracy: %f\n", accuracy);
 }

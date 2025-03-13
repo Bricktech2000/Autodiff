@@ -1,5 +1,15 @@
 #include <stddef.h>
 
+#define ROW_TENSOR(TENSOR)                                                     \
+  tensor_reshape((shape_t){1, (TENSOR)->shape[0]}, TENSOR)
+#define COL_TENSOR(TENSOR)                                                     \
+  tensor_reshape((shape_t){(TENSOR)->shape[0], 1}, TENSOR)
+
+#define TENSOR_FOR(TENSOR)                                                     \
+  for (size_t idx = 0; idx < shape_size((TENSOR)->shape); idx++)               \
+    for (struct node *node = (TENSOR)->data[idx], **_p = &node; _p;            \
+         (TENSOR)->data[idx] = node, _p = NULL)
+
 typedef size_t shape_t[16];
 
 struct tensor {

@@ -33,15 +33,13 @@ struct tensor *tensor_alloc(shape_t shape) {
 
 struct tensor *tensor_nans(shape_t shape) {
   struct tensor *tensor = tensor_alloc(shape);
-  for (size_t i = 0; i < shape_size(tensor->shape); i++)
-    tensor->data[i] = LIT(NAN);
+  TENSOR_FOR(tensor) node = LIT(NAN);
   return tensor;
 }
 
-struct tensor *tensor_lit(shape_t shape, struct node *node) {
+struct tensor *tensor_lit(shape_t shape, struct node *lit) {
   struct tensor *tensor = tensor_alloc(shape);
-  for (size_t i = 0; i < shape_size(tensor->shape); i++)
-    tensor->data[i] = node;
+  TENSOR_FOR(tensor) node = lit;
   return tensor;
 }
 
@@ -55,8 +53,7 @@ struct tensor *tensor_clone(struct tensor *tensor) {
 struct tensor *tensor_unop(struct node *(*unop)(struct node *lhs),
                            struct tensor *lhs) {
   struct tensor *out = tensor_alloc(lhs->shape);
-  for (size_t i = 0; i < shape_size(lhs->shape); i++)
-    out->data[i] = unop(lhs->data[i]);
+  TENSOR_FOR(out) node = unop(lhs->data[idx]);
   return out;
 }
 
@@ -67,8 +64,7 @@ struct tensor *tensor_binop(struct node *(*binop)(struct node *lhs,
     return NULL;
 
   struct tensor *out = tensor_alloc(lhs->shape);
-  for (size_t i = 0; i < shape_size(lhs->shape); i++)
-    out->data[i] = binop(lhs->data[i], rhs->data[i]);
+  TENSOR_FOR(out) node = binop(lhs->data[idx], rhs->data[idx]);
   return out;
 }
 
@@ -77,8 +73,7 @@ struct node *tensor_fold(struct node *id,
                                                struct node *rhs),
                          struct tensor *tensor) {
   struct node *acc = id;
-  for (size_t i = 0; i < shape_size(tensor->shape); i++)
-    acc = binop(acc, tensor->data[i]);
+  TENSOR_FOR(tensor) acc = binop(acc, node);
   return acc;
 }
 
@@ -98,8 +93,7 @@ struct tensor *tensor_combine(struct tensor *tensors[]) {
 
   struct tensor *out = tensor_alloc((shape_t){size});
   for (struct tensor **tensor = tensors; *tensor; tensor++)
-    for (size_t i = 0; i < shape_size((*tensor)->shape); i++)
-      out->data[j++] = (*tensor)->data[i];
+    TENSOR_FOR(*tensor) out->data[j++] = node;
   return out;
 }
 

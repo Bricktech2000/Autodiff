@@ -1,24 +1,27 @@
-#include "utils.h"
+#include "lib/autodiff.h"
+#include "lib/tensor.h"
+#include "lib/utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 int main(void) {
-  struct tensor *l0 = COL_TENSOR(tensor_nans((shape_t){784}));
+  struct tensor *l0 = tensor_nans((shape_t){28 * 28});
+  l0 = COL_TENSOR(l0);
 
-  struct tensor *b1 = COL_TENSOR(tensor_nans((shape_t){64}));
+  struct tensor *b1 = tensor_nans((shape_t){64});
   struct tensor *w1 = tensor_nans((shape_t){*b1->shape, *l0->shape});
-  struct tensor *l1 =
-      tensor_unop(RELU, tensor_binop(ADD, b1, tensor_matmul(w1, l0)));
+  struct tensor *l1 = tensor_unop(
+      RELU, tensor_binop(ADD, COL_TENSOR(b1), tensor_matmul(w1, l0)));
 
-  struct tensor *b2 = COL_TENSOR(tensor_nans((shape_t){32}));
+  struct tensor *b2 = tensor_nans((shape_t){32});
   struct tensor *w2 = tensor_nans((shape_t){*b2->shape, *l1->shape});
-  struct tensor *l2 =
-      tensor_unop(RELU, tensor_binop(ADD, b2, tensor_matmul(w2, l1)));
+  struct tensor *l2 = tensor_unop(
+      RELU, tensor_binop(ADD, COL_TENSOR(b2), tensor_matmul(w2, l1)));
 
-  struct tensor *b3 = COL_TENSOR(tensor_nans((shape_t){10}));
+  struct tensor *b3 = tensor_nans((shape_t){10});
   struct tensor *w3 = tensor_nans((shape_t){*b3->shape, *l2->shape});
   struct tensor *l3 =
-      tensor_softmax(tensor_binop(ADD, b3, tensor_matmul(w3, l2)));
+      tensor_softmax(tensor_binop(ADD, COL_TENSOR(b3), tensor_matmul(w3, l2)));
 
   struct tensor *x = l0, *yh = l3;
   struct tensor *y = tensor_nans(yh->shape);
@@ -41,8 +44,8 @@ int main(void) {
   fprintf(h_fp, "typedef double x_t[%zd];\n", shape_size(x->shape));
   fprintf(h_fp, "typedef double w_t[%zd];\n", shape_size(w->shape));
   fprintf(h_fp, "typedef double yh_t[%zd];\n", shape_size(yh->shape));
-  fprintf(h_fp, "void predict(x_t x, w_t w, yh_t yh);\n");
-  fprintf(c_fp, "void predict(x_t x, w_t w, yh_t yh) {\n");
+  fprintf(h_fp, "void mlp_predict(x_t x, w_t w, yh_t yh);\n");
+  fprintf(c_fp, "void mlp_predict(x_t x, w_t w, yh_t yh) {\n");
   TENSOR_FOR(x) fprintf(c_fp, "double t%d = x[%zd];\n", node->id, idx);
   TENSOR_FOR(w) fprintf(c_fp, "double t%d = w[%zd];\n", node->id, idx);
   putc('\n', c_fp);
@@ -58,8 +61,8 @@ int main(void) {
   fprintf(h_fp, "typedef double y_t[%zd];\n", shape_size(y->shape));
   fprintf(h_fp, "typedef double dw_t[%zd];\n", shape_size(w->shape));
   fprintf(h_fp, "typedef double *c_t;\n");
-  fprintf(h_fp, "void backprop(x_t x, w_t w, y_t y, dw_t dw, c_t c);\n");
-  fprintf(c_fp, "void backprop(x_t x, w_t w, y_t y, dw_t dw, c_t c) {\n");
+  fprintf(h_fp, "void mlp_backprop(x_t x, w_t w, y_t y, dw_t dw, c_t c);\n");
+  fprintf(c_fp, "void mlp_backprop(x_t x, w_t w, y_t y, dw_t dw, c_t c) {\n");
   TENSOR_FOR(x) fprintf(c_fp, "double t%d = x[%zd];\n", node->id, idx);
   TENSOR_FOR(w) fprintf(c_fp, "double t%d = w[%zd];\n", node->id, idx);
   TENSOR_FOR(y) fprintf(c_fp, "double t%d = y[%zd];\n", node->id, idx);
