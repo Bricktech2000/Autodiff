@@ -24,10 +24,11 @@ int main(void) {
   struct tensor *w = tensor_nans((shape_t){DEGREE});
   struct tensor *yh = tensor_lit(x->shape, LIT(0.0));
   TENSOR_FOR(w)
-  yh = tensor_binop(ADD, tensor_binop(MUL, yh, x), tensor_lit(yh->shape, node));
+  yh = tensor_binop(ADD, MOVE tensor_binop(MUL, MOVE yh, REF x),
+                    MOVE tensor_lit(yh->shape, node));
 
   struct tensor *y = tensor_nans(yh->shape);
-  struct node *r2 = tensor_r2(y, yh);
+  struct node *r2 = tensor_r2(REF y, REF yh);
 
   TENSOR_FOR(w) node->grad = LIT(0.0);
   r2->grad = LIT(1.0), node_grad(r2, ++visited);
@@ -54,5 +55,6 @@ int main(void) {
   TENSOR_FOR(w) printf(") * x %+f", node->val);
   putchar('\n');
 
-  // XXX doc no free
+  r2->next = NULL, node_free(r2, ++visited);
+  free(x), free(yh), free(w), free(y);
 }

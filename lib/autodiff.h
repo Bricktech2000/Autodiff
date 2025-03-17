@@ -23,6 +23,7 @@ struct node *LIT(double val);
 
 NODE_TYPES(DECL_EMPTY, DECL_UNOP, DECL_BINOP)
 
+void node_free(struct node *head, int visited);
 void node_eval(struct node *node, int visited);
 void node_gen(FILE *fp, char *decl, char *ref, struct node *node, int visited);
 void node_grad(struct node *node, int visited);

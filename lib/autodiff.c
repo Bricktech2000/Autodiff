@@ -43,6 +43,29 @@ static void revtoposort(struct node *node, struct node **head, int visited) {
   node->next = *head, *head = node;
 }
 
+void node_free(struct node *head, int visited) {
+  // free linked list of nodes formed by `next` fields starting at `head`, and
+  // their dependencies, and their gradients. clobbers `next` fields. make sure
+  // to call with a unique `visited`
+
+  struct node *tail = &(struct node){.next = head};
+  while (tail->next)
+    tail = tail->next, tail->visited = visited;
+
+  for (struct node *node = head; node; node = node->next) {
+    if (node->lhs && node->lhs->visited != visited)
+      tail->next = node->lhs, tail = tail->next, tail->visited = visited;
+    if (node->rhs && node->rhs->visited != visited)
+      tail->next = node->rhs, tail = tail->next, tail->visited = visited;
+    if (node->grad && node->grad->visited != visited)
+      tail->next = node->grad, tail = tail->next, tail->visited = visited;
+    tail->next = NULL;
+  }
+
+  for (struct node *next, *node = head; node; node = next)
+    next = node->next, free(node);
+}
+
 void node_eval(struct node *node, int visited) {
   // evaluate the value of `node` and its dependencies and store results in
   // `val` fields. make sure all dependencies of type `NODE_LIT` actually
@@ -236,15 +259,13 @@ void node_grad(struct node *node, int visited) {
     }
 
     // chain rule and accumulation
-    lhs_grad = MUL(lhs_grad, node->grad);
     if (node->lhs && node->lhs->grad)
-      node->lhs->grad = ADD(node->lhs->grad, lhs_grad);
+      node->lhs->grad = ADD(node->lhs->grad, MUL(lhs_grad, node->grad));
     else if (node->lhs)
-      node->lhs->grad = lhs_grad;
-    rhs_grad = MUL(rhs_grad, node->grad);
+      node->lhs->grad = MUL(lhs_grad, node->grad);
     if (node->rhs && node->rhs->grad)
-      node->rhs->grad = ADD(node->rhs->grad, rhs_grad);
+      node->rhs->grad = ADD(node->rhs->grad, MUL(rhs_grad, node->grad));
     else if (node->rhs)
-      node->rhs->grad = rhs_grad;
+      node->rhs->grad = MUL(rhs_grad, node->grad);
   }
 }
