@@ -28,7 +28,7 @@ size_t shape_rank(shape_t shape);
 int shape_cmp(shape_t lhs, shape_t rhs);
 struct tensor *tensor_alloc(shape_t shape);
 struct tensor *tensor_nans(shape_t shape);
-struct tensor *tensor_lit(shape_t shape, struct node *lit);
+struct tensor *tensor_repeat(shape_t shape, struct node *item);
 struct tensor *tensor_clone(bool move_tensor, struct tensor *tensor);
 struct tensor *tensor_unop(struct node *(*unop)(struct node *lhs),
                            bool move_lhs, struct tensor *lhs);

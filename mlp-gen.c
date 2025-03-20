@@ -10,20 +10,20 @@ int main(void) {
 
   struct tensor *b1 = tensor_nans((shape_t){64});
   struct tensor *w1 = tensor_nans((shape_t){*b1->shape, *l0->shape});
-  struct tensor *l1 =
-      tensor_unop(RELU, MOVE tensor_binop(ADD, REF b1 = COL_TENSOR(b1),
-                                          MOVE tensor_matmul(REF w1, REF l0)));
+  struct tensor *l1 = tensor_unop(
+      node_relu, MOVE tensor_binop(node_add, REF b1 = COL_TENSOR(b1),
+                                   MOVE tensor_matmul(REF w1, REF l0)));
 
   struct tensor *b2 = tensor_nans((shape_t){32});
   struct tensor *w2 = tensor_nans((shape_t){*b2->shape, *l1->shape});
-  struct tensor *l2 =
-      tensor_unop(RELU, MOVE tensor_binop(ADD, REF b2 = COL_TENSOR(b2),
-                                          MOVE tensor_matmul(REF w2, REF l1)));
+  struct tensor *l2 = tensor_unop(
+      node_relu, MOVE tensor_binop(node_add, REF b2 = COL_TENSOR(b2),
+                                   MOVE tensor_matmul(REF w2, REF l1)));
 
   struct tensor *b3 = tensor_nans((shape_t){10});
   struct tensor *w3 = tensor_nans((shape_t){*b3->shape, *l2->shape});
   struct tensor *l3 = tensor_softmax(MOVE tensor_binop(
-      ADD, REF b3 = COL_TENSOR(b3), MOVE tensor_matmul(REF w3, REF l2)));
+      node_add, REF b3 = COL_TENSOR(b3), MOVE tensor_matmul(REF w3, REF l2)));
 
   free(l1), free(l2);
   struct tensor *x = (MOVE l0), *yh = (MOVE l3);
@@ -43,7 +43,7 @@ int main(void) {
 
   int visited = 0;
   fprintf(c_fp, "#include \"mlp.h\"\n");
-  fprintf(c_fp, "#include <math.h>\n");
+  fprintf(c_fp, "#include \"runtime.h\"\n");
 
   fprintf(h_fp, "typedef double x_t[%zd];\n", shape_size(x->shape));
   fprintf(h_fp, "typedef double w_t[%zd];\n", shape_size(w->shape));
@@ -59,8 +59,8 @@ int main(void) {
   TENSOR_FOR(yh) fprintf(c_fp, "yh[%zd] = t%d;\n", idx, node->id);
   fprintf(c_fp, "}\n\n");
 
-  TENSOR_FOR(w) node->grad = LIT(0.0);
-  c->grad = LIT(1.0), node_grad(c, ++visited);
+  TENSOR_FOR(w) node->grad = node_lit(0.0);
+  c->grad = node_lit(1.0), node_grad(c, ++visited);
 
   fprintf(h_fp, "typedef double y_t[%zd];\n", shape_size(y->shape));
   fprintf(h_fp, "typedef double dw_t[%zd];\n", shape_size(w->shape));

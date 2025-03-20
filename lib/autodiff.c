@@ -1,32 +1,36 @@
 #include "autodiff.h"
-#include <math.h>
+#include "runtime.h"
 #include <stdlib.h>
 
 static int node_id = 0;
 
-#define DEF_EMPTY(NAME)
-struct node *LIT(double val) {
-  struct node *node = malloc(sizeof(*node));
-  *node = (struct node){.type = NODE_LIT, .id = node_id++, .val = val};
-  return node;
-}
-
-#define DEF_UNOP(NAME)                                                         \
-  struct node *NAME(struct node *lhs) {                                        \
+#define DEF_LIT(UC, LC)                                                        \
+  struct node *node_##LC(double val) {                                         \
     struct node *node = malloc(sizeof(*node));                                 \
-    *node = (struct node){.type = NODE_##NAME, .id = node_id++, .lhs = lhs};   \
+    *node = (struct node){.type = NODE_##UC, .id = node_id++, .val = val};     \
     return node;                                                               \
   }
 
-#define DEF_BINOP(NAME)                                                        \
-  struct node *NAME(struct node *lhs, struct node *rhs) {                      \
+#define DEF_UNOP(UC, LC)                                                       \
+  struct node *node_##LC(struct node *lhs) {                                   \
+    struct node *node = malloc(sizeof(*node));                                 \
+    *node = (struct node){.type = NODE_##UC, .id = node_id++, .lhs = lhs};     \
+    return node;                                                               \
+  }
+
+#define DEF_BINOP(UC, LC)                                                      \
+  struct node *node_##LC(struct node *lhs, struct node *rhs) {                 \
     struct node *node = malloc(sizeof(*node));                                 \
     *node = (struct node){                                                     \
-        .type = NODE_##NAME, .id = node_id++, .lhs = lhs, .rhs = rhs};         \
+        .type = NODE_##UC, .id = node_id++, .lhs = lhs, .rhs = rhs};           \
     return node;                                                               \
   }
 
-NODE_TYPES(DEF_EMPTY, DEF_UNOP, DEF_BINOP)
+NODE_TYPES(DEF_LIT, DEF_UNOP, DEF_BINOP)
+
+#undef DEF_LIT
+#undef DEF_UNOP
+#undef DEF_BINOP
 
 static void revtoposort(struct node *node, struct node **head, int visited) {
   // compute reverse topolgical sorting of `node` and store result in the linked
@@ -81,52 +85,31 @@ void node_eval(struct node *node, int visited) {
     node_eval(node->rhs, visited);
 
   switch (node->type) {
-  case NODE_LIT:
+    // see runtim.h
+#define EVAL_LIT(UC, LC)                                                       \
+  case NODE_##UC:                                                              \
+    node->val = op_##LC(node->val);                                            \
     break;
-  case NODE_ADD:
-    node->val = node->lhs->val + node->rhs->val;
+#define EVAL_UNOP(UC, LC)                                                      \
+  case NODE_##UC:                                                              \
+    node->val = op_##LC(node->lhs->val);                                       \
     break;
-  case NODE_SUB:
-    node->val = node->lhs->val - node->rhs->val;
+#define EVAL_BINOP(UC, LC)                                                     \
+  case NODE_##UC:                                                              \
+    node->val = op_##LC(node->lhs->val, node->rhs->val);                       \
     break;
-  case NODE_NEG:
-    node->val = -node->lhs->val;
-    break;
-  case NODE_MUL:
-    node->val = node->lhs->val * node->rhs->val;
-    break;
-  case NODE_DIV:
-    node->val = node->lhs->val / node->rhs->val;
-    break;
-  case NODE_INV:
-    node->val = 1.0 / node->lhs->val;
-    break;
-  case NODE_EXP:
-    node->val = exp(node->lhs->val);
-    break;
-  case NODE_LN:
-    node->val = log(node->lhs->val);
-    break;
-  case NODE_POW:
-    node->val = pow(node->lhs->val, node->rhs->val);
-    break;
-  case NODE_LOG:
-    node->val = log(node->lhs->val) / log(node->rhs->val);
-    break;
-  case NODE_ID:
-    node->val = node->lhs->val;
-    break;
-  case NODE_ABS:
-    node->val = fabs(node->lhs->val);
-    break;
-  case NODE_RELU:
-    node->val = node->lhs->val < 0.0 ? 0.0 : node->lhs->val;
-    break;
+
+    NODE_TYPES(EVAL_LIT, EVAL_UNOP, EVAL_BINOP)
+
+#undef EVAL_LIT
+#undef EVAL_UNOP
+#undef EVAL_BINOP
   }
 }
 
 void node_gen(FILE *fp, char *decl, char *ref, struct node *node, int visited) {
-  // codegen node into C source code. make sure to call with a unique `visited`
+  // codegen node into C source code. codegens nothing for `node_lit(NAN)`s, so
+  // they can be used as inputs. make sure to call with a unique `visited`
 
   if (node->visited == visited)
     return;
@@ -140,65 +123,43 @@ void node_gen(FILE *fp, char *decl, char *ref, struct node *node, int visited) {
   if (node->type == NODE_LIT && isnan(node->val))
     return;
 
-#define REF(NODE) fprintf(fp, ref, NODE->id, NODE->id, NODE->id)
+    // passing in `node->id` several times so that the `ref` and `decl` format
+    // strings can refer to a node's ID several times if needed
+#define GEN_REF(NODE) fprintf(fp, ref, NODE->id, NODE->id, NODE->id)
   fprintf(fp, decl, node->id, node->id, node->id);
 
   switch (node->type) {
-  case NODE_LIT:
-    fprintf(fp, "%f", node->val);
+    // see runtime.h
+#define GEN_LIT(UC, LC)                                                        \
+  case NODE_##UC:                                                              \
+    fprintf(fp, "op_" #LC "(%f)", node->val);                                  \
     break;
-  case NODE_ADD:
-    REF(node->lhs), fprintf(fp, " + "), REF(node->rhs);
+#define GEN_UNOP(UC, LC)                                                       \
+  case NODE_##UC:                                                              \
+    fprintf(fp, "op_" #LC "("), GEN_REF(node->lhs), fprintf(fp, ")");          \
     break;
-  case NODE_SUB:
-    REF(node->lhs), fprintf(fp, " - "), REF(node->rhs);
+#define GEN_BINOP(UC, LC)                                                      \
+  case NODE_##UC:                                                              \
+    fprintf(fp, "op_" #LC "("), GEN_REF(node->lhs), fprintf(fp, ", "),         \
+        GEN_REF(node->rhs), fprintf(fp, ")");                                  \
     break;
-  case NODE_NEG:
-    fprintf(fp, "-"), REF(node->lhs);
-    break;
-  case NODE_MUL:
-    REF(node->lhs), fprintf(fp, " * "), REF(node->rhs);
-    break;
-  case NODE_DIV:
-    REF(node->lhs), fprintf(fp, " / "), REF(node->rhs);
-    break;
-  case NODE_INV:
-    fprintf(fp, "1.0 / "), REF(node->lhs);
-    break;
-  case NODE_EXP:
-    fprintf(fp, "exp("), REF(node->lhs), fprintf(fp, ")");
-    break;
-  case NODE_LN:
-    fprintf(fp, "log("), REF(node->lhs), fprintf(fp, ")");
-    break;
-  case NODE_POW:
-    fprintf(fp, "pow("), REF(node->lhs), fprintf(fp, ", "), REF(node->rhs),
-        fprintf(fp, ")");
-    break;
-  case NODE_LOG:
-    fprintf(fp, "log("), REF(node->lhs), fprintf(fp, ") / log("),
-        REF(node->rhs), fprintf(fp, ")");
-    break;
-  case NODE_ID:
-    REF(node->lhs);
-    break;
-  case NODE_ABS:
-    fprintf(fp, "fabs("), REF(node->lhs), fprintf(fp, ")");
-    break;
-  case NODE_RELU:
-    REF(node->lhs), fprintf(fp, " < 0.0 ? 0.0 : "), REF(node->lhs);
-    break;
+
+    NODE_TYPES(GEN_LIT, GEN_UNOP, GEN_BINOP)
+
+#undef GEN_LIT
+#undef GEN_UNOP
+#undef GEN_BINOP
   }
 
   fprintf(fp, ";\n");
-#undef REF
+#undef GEN_REF
 }
 
 void node_grad(struct node *node, int visited) {
   // compute derivative of `node` and its dependencies with respect to `node`
   // and store results in `grad` fields. before calling make sure that all
-  // dependencies' `grad`s hold either `NULL` or `LIT(0.0)` and that `node->
-  // grad` is `LIT(1.0)`. make sure to call with a unique `visited`
+  // dependencies' `grad`s hold either `NULL` or `node_lit(0.0)` and that
+  // `node->grad` is `node_lit(1.0)`. make sure to call with a unique `visited`
 
   struct node *head = NULL;
   revtoposort(node, &head, visited);
@@ -206,66 +167,81 @@ void node_grad(struct node *node, int visited) {
   for (struct node *node = head; node; node = node->next) {
     struct node *lhs_grad = NULL, *rhs_grad = NULL;
 
-    // derivative of `node->lhs` and `node->rhs` with respect to `node`
+    // derivatives of `node->lhs` and `node->rhs` with respect to `node`
     switch (node->type) {
     case NODE_LIT:
       break;
     case NODE_ADD:
-      lhs_grad = LIT(1.0);
+      lhs_grad = node_lit(1.0);
       rhs_grad = lhs_grad;
       break;
     case NODE_SUB:
-      lhs_grad = LIT(1.0);
-      rhs_grad = LIT(-1.0);
+      lhs_grad = node_lit(1.0);
+      rhs_grad = node_lit(-1.0);
       break;
     case NODE_NEG:
-      lhs_grad = LIT(-1.0);
+      lhs_grad = node_lit(-1.0);
       break;
     case NODE_MUL:
       lhs_grad = node->rhs;
       rhs_grad = node->lhs;
       break;
     case NODE_DIV:
-      lhs_grad = INV(node->rhs);
-      rhs_grad = NEG(DIV(node, node->rhs));
+      lhs_grad = node_inv(node->rhs);
+      rhs_grad = node_neg(node_div(node, node->rhs));
       break;
     case NODE_INV:
-      lhs_grad = NEG(DIV(node, node->lhs));
+      lhs_grad = node_neg(node_div(node, node->lhs));
       break;
     case NODE_EXP:
       lhs_grad = node;
       break;
-    case NODE_LN:
-      lhs_grad = INV(node->lhs);
+    case NODE_LOG:
+      lhs_grad = node_inv(node->lhs);
+      break;
+    case NODE_EXP2:
+      lhs_grad = node_mul(node, node_log(node->lhs));
+      break;
+    case NODE_LOG2:
+      lhs_grad = node_inv(node_mul(node->lhs, node_lit(log(2.0))));
       break;
     case NODE_POW:
-      lhs_grad = MUL(node->rhs, DIV(node, node->lhs));
-      rhs_grad = MUL(node, LN(node->lhs));
+      lhs_grad = node_mul(node->rhs, node_div(node, node->lhs));
+      rhs_grad = node_mul(node, node_log(node->lhs));
       break;
-    case NODE_LOG:;
-      struct node *ln_rhs = LN(node->rhs);
-      lhs_grad = INV(MUL(node->lhs, ln_rhs));
-      rhs_grad = NEG(DIV(node, MUL(node->rhs, ln_rhs)));
+    case NODE_SQRT:
+      lhs_grad = node_inv(node_mul(node_lit(2.0), node));
       break;
-    case NODE_ID:
-      lhs_grad = LIT(1.0);
+    case NODE_CBRT:
+      lhs_grad = node_div(node, node_mul(node_lit(3.0), node->lhs));
+      break;
+    case NODE_MIN:;
+      struct node *sub_rhs_lhs = node_sub(node->rhs, node->lhs);
+      lhs_grad = node_div(node_relu(sub_rhs_lhs), sub_rhs_lhs);
+      rhs_grad = node_sub(node_lit(1.0), lhs_grad);
+      break;
+    case NODE_MAX:;
+      struct node *sub_lhs_rhs = node_sub(node->lhs, node->rhs);
+      lhs_grad = node_div(node_relu(sub_lhs_rhs), sub_lhs_rhs);
+      rhs_grad = node_sub(node_lit(1.0), lhs_grad);
       break;
     case NODE_ABS:
-      lhs_grad = DIV(ABS(node->lhs), node->lhs);
+      lhs_grad = node_div(node, node->lhs);
       break;
     case NODE_RELU:
-      lhs_grad = DIV(RELU(node->lhs), node->lhs);
+      lhs_grad = node_div(node, node->lhs);
       break;
     }
 
-    // chain rule and accumulation
-    if (node->lhs && node->lhs->grad)
-      node->lhs->grad = ADD(node->lhs->grad, MUL(lhs_grad, node->grad));
-    else if (node->lhs)
-      node->lhs->grad = MUL(lhs_grad, node->grad);
-    if (node->rhs && node->rhs->grad)
-      node->rhs->grad = ADD(node->rhs->grad, MUL(rhs_grad, node->grad));
-    else if (node->rhs)
-      node->rhs->grad = MUL(rhs_grad, node->grad);
+    if (node->lhs) {
+      lhs_grad = node_mul(lhs_grad, node->grad); // chain rule
+      node->lhs->grad = node->lhs->grad ? node_add(node->lhs->grad, lhs_grad)
+                                        : lhs_grad; // gradient accumulation
+    }
+    if (node->rhs) {
+      rhs_grad = node_mul(rhs_grad, node->grad); // chain rule
+      node->rhs->grad = node->rhs->grad ? node_add(node->rhs->grad, rhs_grad)
+                                        : rhs_grad; // gradient accumulation
+    }
   }
 }

@@ -22,16 +22,16 @@ int main(void) {
 
   struct tensor *x = tensor_nans((shape_t){NPOINTS});
   struct tensor *w = tensor_nans((shape_t){DEGREE});
-  struct tensor *yh = tensor_lit(x->shape, LIT(0.0));
+  struct tensor *yh = tensor_repeat(x->shape, node_lit(0.0));
   TENSOR_FOR(w)
-  yh = tensor_binop(ADD, MOVE tensor_binop(MUL, MOVE yh, REF x),
-                    MOVE tensor_lit(yh->shape, node));
+  yh = tensor_binop(node_add, MOVE tensor_binop(node_mul, MOVE yh, REF x),
+                    MOVE tensor_repeat(yh->shape, node));
 
   struct tensor *y = tensor_nans(yh->shape);
   struct node *r2 = tensor_r2(REF y, REF yh);
 
-  TENSOR_FOR(w) node->grad = LIT(0.0);
-  r2->grad = LIT(1.0), node_grad(r2, ++visited);
+  TENSOR_FOR(w) node->grad = node_lit(0.0);
+  r2->grad = node_lit(1.0), node_grad(r2, ++visited);
 
   TENSOR_FOR(x) node->val = POINT_Y(idx) + NOISE_X(idx);
   TENSOR_FOR(y) node->val = POINT_X(idx) + NOISE_Y(idx);
@@ -54,6 +54,9 @@ int main(void) {
   printf("0.0");
   TENSOR_FOR(w) printf(") * x %+f", node->val);
   putchar('\n');
+
+#undef STRINGIZE_INNER
+#undef STRINGIZE
 
   r2->next = NULL, node_free(r2, ++visited);
   free(x), free(yh), free(w), free(y);

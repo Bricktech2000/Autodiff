@@ -33,13 +33,13 @@ struct tensor *tensor_alloc(shape_t shape) {
 
 struct tensor *tensor_nans(shape_t shape) {
   struct tensor *tensor = tensor_alloc(shape);
-  TENSOR_FOR(tensor) node = LIT(NAN);
+  TENSOR_FOR(tensor) node = node_lit(NAN);
   return tensor;
 }
 
-struct tensor *tensor_lit(shape_t shape, struct node *lit) {
+struct tensor *tensor_repeat(shape_t shape, struct node *item) {
   struct tensor *tensor = tensor_alloc(shape);
-  TENSOR_FOR(tensor) node = lit;
+  TENSOR_FOR(tensor) node = item;
   return tensor;
 }
 
@@ -101,10 +101,10 @@ struct tensor *tensor_matmul(bool move_lhs, struct tensor *lhs, bool move_rhs,
 
   for (size_t i = 0; i < lhs->shape[0]; i++) {
     for (size_t k = 0; k < rhs->shape[1]; k++) {
-      out_data[i][k] = LIT(0.0);
+      out_data[i][k] = node_lit(0.0);
       for (size_t j = 0; j < lhs->shape[1]; j++)
         out_data[i][k] =
-            ADD(out_data[i][k], MUL(lhs_data[i][j], rhs_data[j][k]));
+            node_add(out_data[i][k], node_mul(lhs_data[i][j], rhs_data[j][k]));
     }
   }
 
@@ -129,6 +129,9 @@ struct tensor *tensor_reshape(shape_t shape, bool move_tensor,
 }
 
 struct tensor *tensor_combine(bool move_tensors[], struct tensor *tensors[]) {
+  // combine a bunch of tensors of disparate shapes into a single tensor of rank
+  // one, to aid in iterating over all nodes
+
   size_t size = 0, j = 0;
   for (struct tensor **tensor = tensors; *tensor; tensor++)
     size += shape_size((*tensor)->shape);

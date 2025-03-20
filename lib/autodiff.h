@@ -1,14 +1,19 @@
 #include <stdio.h>
 
 // clang-format off
-#define NODE_TYPES(LEAF, UNOP, BINOP)                                          \
-  LEAF(LIT) BINOP(ADD) BINOP(SUB) UNOP(NEG) BINOP(MUL) BINOP(DIV) UNOP(INV)    \
-  UNOP(EXP) UNOP(LN) BINOP(POW) BINOP(LOG) UNOP(ID) UNOP(ABS) UNOP(RELU)
+#define NODE_TYPES(LIT_, UNOP, BINOP)                                          \
+  LIT_(LIT, lit)                                                               \
+  BINOP(ADD, add) BINOP(SUB, sub) UNOP(NEG, neg)                               \
+  BINOP(MUL, mul) BINOP(DIV, div) UNOP(INV, inv)                               \
+  UNOP(EXP, exp) UNOP(LOG, log) UNOP(EXP2, exp2) UNOP(LOG2, log2)              \
+  BINOP(POW, pow) UNOP(SQRT, sqrt) UNOP(CBRT, cbrt)                            \
+  BINOP(MIN, min) BINOP(MAX, max) UNOP(RELU, relu) UNOP(ABS, abs)
 // clang-format on
 
 struct node {
-#define MKENUM(NAME) NODE_##NAME,
+#define MKENUM(UC, LC) NODE_##UC,
   enum node_type { NODE_TYPES(MKENUM, MKENUM, MKENUM) } type;
+#undef MKENUM
   int id, visited;        // for node graph traversal
   struct node *lhs, *rhs; // child nodes; may be `NULL` depending on `type`
   struct node *next;      // for output of `rev_toposort`
@@ -16,12 +21,16 @@ struct node {
   double val;             // for output of `node_eval`
 };
 
-#define DECL_EMPTY(NAME)
-struct node *LIT(double val);
-#define DECL_UNOP(NAME) struct node *NAME(struct node *lhs);
-#define DECL_BINOP(NAME) struct node *NAME(struct node *lhs, struct node *rhs);
+#define DECL_LIT(UL, LC) struct node *node_##LC(double val);
+#define DECL_UNOP(UL, LC) struct node *node_##LC(struct node *lhs);
+#define DECL_BINOP(UL, LC)                                                     \
+  struct node *node_##LC(struct node *lhs, struct node *rhs);
 
-NODE_TYPES(DECL_EMPTY, DECL_UNOP, DECL_BINOP)
+NODE_TYPES(DECL_LIT, DECL_UNOP, DECL_BINOP)
+
+#undef DECL_LIT
+#undef DECL_UNOP
+#undef DECL_BINOP
 
 void node_free(struct node *head, int visited);
 void node_eval(struct node *node, int visited);
