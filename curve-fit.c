@@ -10,10 +10,10 @@
 #define ITERS 1000000 // number of iterations performed
 
 #define NPOINTS 20
-#define POINT_Y(N) N
-#define POINT_X(N) -0.06 * N *N + 1.0 * N + 5.0
-#define NOISE_X(N) (double)rand() / RAND_MAX - 0.5;
-#define NOISE_Y(N) (double)rand() / RAND_MAX - 0.5;
+#define POINT_X(N) N
+#define POINT_Y(N) -0.06 * N *N + 1.0 * N + 5.0
+#define NOISE_X(N) (double)rand() / RAND_MAX - 0.5
+#define NOISE_Y(N) (double)rand() / RAND_MAX - 0.5
 
 int main(void) {
   srand(time(NULL));
@@ -33,8 +33,8 @@ int main(void) {
   TENSOR_FOR(w) node->grad = node_lit(0.0);
   r2->grad = node_lit(1.0), node_grad(r2, ++visited);
 
-  TENSOR_FOR(x) node->val = POINT_Y(idx) + NOISE_X(idx);
-  TENSOR_FOR(y) node->val = POINT_X(idx) + NOISE_Y(idx);
+  TENSOR_FOR(x) node->val = POINT_X(idx) + NOISE_X(idx);
+  TENSOR_FOR(y) node->val = POINT_Y(idx) + NOISE_Y(idx);
   TENSOR_FOR(w) node->val = (double)rand() / RAND_MAX - 0.5;
   for (int iter = 0; iter < ITERS; iter++) {
     node_eval(r2, ++visited);
