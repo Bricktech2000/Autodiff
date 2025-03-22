@@ -10,10 +10,10 @@
 #define ITERS 1000000 // number of iterations performed
 
 #define NPOINTS 20
-#define POINT_X(N) N
-#define POINT_Y(N) -0.06 * N *N + 1.0 * N + 5.0
-#define NOISE_X(N) (double)rand() / RAND_MAX - 0.5
-#define NOISE_Y(N) (double)rand() / RAND_MAX - 0.5
+#define POINT_X(T) T
+#define POINT_Y(T) -0.06 * T *T + 1.0 * T + 5.0
+#define NOISE_X(T) (double)rand() / RAND_MAX - 0.5
+#define NOISE_Y(T) (double)rand() / RAND_MAX - 0.5
 
 int main(void) {
   srand(time(NULL));
@@ -48,12 +48,12 @@ int main(void) {
 #define STRINGIZE_INNER(...) #__VA_ARGS__
 #define STRINGIZE(...) STRINGIZE_INNER(__VA_ARGS__)
 
-  printf(STRINGIZE(POINT_Y(y)) " = " STRINGIZE(POINT_X(x)) "\n");
-  printf("yh = ");
+  printf("(" STRINGIZE(POINT_X(t)) ", " STRINGIZE(POINT_Y(t)) ")\n");
+  printf("(t, ");
   TENSOR_FOR(w) putchar('(');
   printf("0.0");
-  TENSOR_FOR(w) printf(") * x %+f", node->val);
-  putchar('\n');
+  TENSOR_FOR(w) printf(") * t %+f", node->val);
+  printf(")\n");
 
 #undef STRINGIZE_INNER
 #undef STRINGIZE

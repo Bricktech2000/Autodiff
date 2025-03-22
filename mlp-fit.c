@@ -1,7 +1,10 @@
 #include "mlp.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <threads.h>
 #include <time.h>
+
+#define THREADS 16
 
 // // faster (90% accuracy)
 // #define ETA 0.05   // learning rate
@@ -99,6 +102,63 @@ void mnist_y_dump(y_t y) {
   putchar('\n');
 }
 
+struct arg {
+  unsigned seed;
+  struct ex *exs;
+  w_t *w;
+  dw_t *dw;
+  c_t *c;
+};
+
+mtx_t sync_lock, grad_lock;
+cnd_t work_avail, work_done;
+int work_remain = THREADS;
+
+// ISO/IEC 9899:TC3, $7.20.2.2, paragraph 5
+#define RAND_R_MAX 32767
+int rand_r(unsigned *seedp) {
+  *seedp = *seedp * 1103515245 + 12345;
+  return *seedp / 65536 % 32768;
+}
+
+int worker(void *arg) {
+  struct arg *a = arg;
+  unsigned seed = a->seed;
+  dw_t dw;
+  c_t c;
+
+  while (1) {
+    mtx_lock(&sync_lock);
+    work_remain--;
+    cnd_signal(&work_done);
+    cnd_wait(&work_avail, &sync_lock);
+    if (work_remain == -1) // terminate request
+      break;
+    mtx_unlock(&sync_lock);
+
+    ARRAY_FOR(dw) elem = 0.0;
+    *c = 0.0;
+
+    for (int batch = 0; batch < BATCH / THREADS; batch++) {
+      // standard `rand()` is not required to be thread safe
+      size_t rand = (size_t)rand_r(&seed) * (RAND_R_MAX + 1) + rand_r(&seed);
+      struct ex *ex = a->exs + rand % TRAIN_LEN;
+      mlp_backprop(ex->x, *a->w, ex->y, dw, c);
+    }
+
+    ARRAY_FOR(dw) elem /= BATCH;
+    *c /= BATCH;
+
+    mtx_lock(&grad_lock);
+    ARRAY_FOR(*a->dw) elem += dw[idx];
+    **a->c += *c;
+    mtx_unlock(&grad_lock);
+  }
+
+  mtx_unlock(&sync_lock);
+  return 0;
+}
+
 int main(void) {
   srand(time(NULL));
 
@@ -108,31 +168,59 @@ int main(void) {
   static w_t w;
   static yh_t yh;
   static dw_t dw;
-  c_t c = &(double){0.0};
+  static c_t c;
   static dw_t v;
 
   ARRAY_FOR(v) elem = 0.0;
   ARRAY_FOR(w) elem = (double)rand() / RAND_MAX - 0.5;
 
+  mtx_init(&sync_lock, mtx_plain), mtx_init(&grad_lock, mtx_plain);
+  cnd_init(&work_avail), cnd_init(&work_done);
+
+  struct arg args[THREADS];
+  thrd_t thrds[THREADS];
+  for (int i = 0; i < THREADS; i++) {
+    args[i] = (struct arg){rand(), train_exs, &w, &dw, &c};
+    thrd_create(thrds + i, worker, args + i);
+  }
+
+  // make sure all threads are waiting
+  mtx_lock(&sync_lock);
+  while (work_remain)
+    cnd_wait(&work_done, &sync_lock);
+  mtx_unlock(&sync_lock);
+
   for (int epoch = 0; epoch < EPOCHS; epoch++) {
     ARRAY_FOR(dw) elem = 0.0;
     *c = 0.0;
 
-    for (int batch = 0; batch < BATCH; batch++) {
-      struct ex *ex = train_exs + rand() % TRAIN_LEN;
-      mlp_backprop(ex->x, w, ex->y, dw, c);
-    }
+    mtx_lock(&sync_lock);
+    work_remain = THREADS;
+    cnd_broadcast(&work_avail);
+    while (work_remain)
+      cnd_wait(&work_done, &sync_lock);
+    mtx_unlock(&sync_lock);
 
-    *c /= BATCH;
-    ARRAY_FOR(dw) elem /= BATCH;
-
+    mtx_lock(&grad_lock);
     ARRAY_FOR(dw) elem += LAMBDA * w[idx] * w[idx];  // L2 regularization
     ARRAY_FOR(v) elem = elem * BETA - ETA * dw[idx]; // momentum
     ARRAY_FOR(w) elem += v[idx];                     // gradient descent
 
     printf("epoch %d of %d; loss %f", epoch, EPOCHS, *c);
     printf("%*s\n", (int)(*c * 64), "#");
+    mtx_unlock(&grad_lock);
   }
+
+  mtx_lock(&sync_lock);
+  work_remain = -1; // terminate request
+  cnd_broadcast(&work_avail);
+  mtx_unlock(&sync_lock);
+
+  for (int i = 0; i < THREADS; i++)
+    thrd_join(thrds[i], NULL);
+
+  mtx_destroy(&sync_lock), mtx_destroy(&grad_lock);
+  cnd_destroy(&work_avail), cnd_destroy(&work_done);
 
   double accuracy = 0.0;
 

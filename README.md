@@ -9,7 +9,7 @@ The multilayer perceptron works in two stages: in [the first](mlp-gen.c) it buil
 Run the multilayer perceptron against MNIST with:
 
 ```sh
-make bin/mlp-fit && bin/mlp-fit
+make -j2 bin/mlp-fit && bin/mlp-fit
 ```
 
 Run the curve fitting demo with:
