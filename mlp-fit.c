@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <threads.h>
 #include <time.h>
+#ifndef __STDC_NO_ATOMICS__
+#include <stdatomic.h>
+#endif
 
 #define THREADS 16
 
@@ -11,14 +14,14 @@
 // #define BETA 0.9   // momentum coefficient
 // #define LAMBDA 0.0 // regularization rate
 // #define BATCH 100  // mini-batch size
-// #define EPOCHS 500 // number of epochs
+// #define ITERS 500  // number of gradient updates
 
 // slower (96% accuracy)
-#define ETA 0.01     // learning rate
-#define BETA 0.9     // momentum coefficient
-#define LAMBDA 0.0   // regularization rate
-#define BATCH 250    // mini-batch size
-#define EPOCHS 10000 // number of epochs
+#define ETA 0.01    // learning rate
+#define BETA 0.9    // momentum coefficient
+#define LAMBDA 0.0  // regularization rate
+#define BATCH 250   // mini-batch size
+#define ITERS 10000 // number of update steps
 
 #define TRAIN_OFST 16
 #define TRAIN_LEN 60000
@@ -110,9 +113,12 @@ struct arg {
   c_t *c;
 };
 
-mtx_t sync_lock, grad_lock;
+mtx_t sync_lock;
 cnd_t work_avail, work_done;
-int work_remain = THREADS;
+int thrds_working;
+#ifndef __STDC_NO_ATOMICS__
+_Atomic int exs_left;
+#endif
 
 // ISO/IEC 9899:TC3, $7.20.2.2, paragraph 5
 #define RAND_R_MAX 32767
@@ -121,25 +127,26 @@ int rand_r(unsigned *seedp) {
   return *seedp / 65536 % 32768;
 }
 
-int worker(void *arg) {
+int worker_thrd(void *arg) {
   struct arg *a = arg;
   unsigned seed = a->seed;
   dw_t dw;
   c_t c;
 
-  while (1) {
-    mtx_lock(&sync_lock);
-    work_remain--;
-    cnd_signal(&work_done);
-    cnd_wait(&work_avail, &sync_lock);
-    if (work_remain == -1) // terminate request
-      break;
+  mtx_lock(&sync_lock);
+
+  while (thrds_working != EOF) {
     mtx_unlock(&sync_lock);
 
     ARRAY_FOR(dw) elem = 0.0;
     *c = 0.0;
 
-    for (int batch = 0; batch < BATCH / THREADS; batch++) {
+#ifndef __STDC_NO_ATOMICS__
+    while (atomic_fetch_sub_explicit(&exs_left, 1, memory_order_relaxed) > 0)
+#else
+    for (int ex = 0; ex < BATCH / THREADS; ex++)
+#endif
+    {
       // standard `rand()` is not required to be thread safe
       size_t rand = (size_t)rand_r(&seed) * (RAND_R_MAX + 1) + rand_r(&seed);
       struct ex *ex = a->exs + rand % TRAIN_LEN;
@@ -149,13 +156,18 @@ int worker(void *arg) {
     ARRAY_FOR(dw) elem /= BATCH;
     *c /= BATCH;
 
-    mtx_lock(&grad_lock);
+    mtx_lock(&sync_lock);
+
     ARRAY_FOR(*a->dw) elem += dw[idx];
     **a->c += *c;
-    mtx_unlock(&grad_lock);
+
+    thrds_working--;
+    cnd_signal(&work_done);
+    cnd_wait(&work_avail, &sync_lock);
   }
 
   mtx_unlock(&sync_lock);
+
   return 0;
 }
 
@@ -174,52 +186,46 @@ int main(void) {
   ARRAY_FOR(v) elem = 0.0;
   ARRAY_FOR(w) elem = (double)rand() / RAND_MAX - 0.5;
 
-  mtx_init(&sync_lock, mtx_plain), mtx_init(&grad_lock, mtx_plain);
+  mtx_init(&sync_lock, mtx_plain);
   cnd_init(&work_avail), cnd_init(&work_done);
+
+  mtx_lock(&sync_lock);
 
   struct arg args[THREADS];
   thrd_t thrds[THREADS];
   for (int i = 0; i < THREADS; i++) {
     args[i] = (struct arg){rand(), train_exs, &w, &dw, &c};
-    thrd_create(thrds + i, worker, args + i);
+    thrd_create(thrds + i, worker_thrd, args + i);
   }
 
-  // make sure all threads are waiting
-  mtx_lock(&sync_lock);
-  while (work_remain)
-    cnd_wait(&work_done, &sync_lock);
-  mtx_unlock(&sync_lock);
-
-  for (int epoch = 0; epoch < EPOCHS; epoch++) {
+  for (int iter = 0; iter < ITERS; iter++) {
     ARRAY_FOR(dw) elem = 0.0;
     *c = 0.0;
 
-    mtx_lock(&sync_lock);
-    work_remain = THREADS;
+#ifndef __STDC_NO_ATOMICS__
+    exs_left = BATCH;
+#endif
+    thrds_working = THREADS;
     cnd_broadcast(&work_avail);
-    while (work_remain)
+    while (thrds_working)
       cnd_wait(&work_done, &sync_lock);
-    mtx_unlock(&sync_lock);
 
-    mtx_lock(&grad_lock);
     ARRAY_FOR(dw) elem += LAMBDA * w[idx] * w[idx];  // L2 regularization
     ARRAY_FOR(v) elem = elem * BETA - ETA * dw[idx]; // momentum
     ARRAY_FOR(w) elem += v[idx];                     // gradient descent
 
-    printf("epoch %d of %d; loss %f", epoch, EPOCHS, *c);
+    printf("iter %d of %d; loss %f", iter, ITERS, *c);
     printf("%*s\n", (int)(*c * 64), "#");
-    mtx_unlock(&grad_lock);
   }
 
-  mtx_lock(&sync_lock);
-  work_remain = -1; // terminate request
+  thrds_working = EOF;
   cnd_broadcast(&work_avail);
   mtx_unlock(&sync_lock);
 
   for (int i = 0; i < THREADS; i++)
     thrd_join(thrds[i], NULL);
 
-  mtx_destroy(&sync_lock), mtx_destroy(&grad_lock);
+  mtx_destroy(&sync_lock);
   cnd_destroy(&work_avail), cnd_destroy(&work_done);
 
   double accuracy = 0.0;

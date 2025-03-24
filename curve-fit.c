@@ -7,7 +7,7 @@
 
 #define ETA 0.002     // learning rate
 #define DEGREE 3      // degree of polynomial (plus one)
-#define ITERS 1000000 // number of iterations performed
+#define ITERS 1000000 // number of update steps
 
 #define NPOINTS 20
 #define POINT_X(T) T
