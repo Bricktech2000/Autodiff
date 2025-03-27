@@ -1,10 +1,12 @@
 #include "mlp.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <threads.h>
 #include <time.h>
+#ifndef __STDC_NO_THREADS__
+#include <threads.h>
 #ifndef __STDC_NO_ATOMICS__
 #include <stdatomic.h>
+#endif
 #endif
 
 #define THREADS 16
@@ -23,12 +25,12 @@
 #define BATCH 250   // mini-batch size
 #define ITERS 10000 // number of update steps
 
-#define TRAIN_OFST 16
 #define TRAIN_LEN 60000
+#define TRAIN_OFSTS 16, 8
 #define TRAIN_PATHS                                                            \
   "MNIST/train-images.idx3-ubyte", "MNIST/train-labels.idx1-ubyte"
-#define TEST_OFST 8
 #define TEST_LEN 10000
+#define TEST_OFSTS 16, 8
 #define TEST_PATHS                                                             \
   "MNIST/t10k-images.idx3-ubyte", "MNIST/t10k-labels.idx1-ubyte"
 
@@ -42,23 +44,19 @@ struct ex {
   y_t y;
 };
 
-struct ex *load_mnist(char *x_path, char *y_path, size_t n) {
-  FILE *x_fp = fopen(x_path, "r");
-  if (x_fp == NULL)
+struct ex *load_mnist(char *x_path, char *y_path, long x_ofst, long y_ofst,
+                      size_t len) {
+  FILE *x_fp = fopen(x_path, "r"), *y_fp = fopen(y_path, "r");
+  if (x_fp == NULL || y_fp == NULL)
     perror("fopen"), exit(EXIT_FAILURE);
-  if (fseek(x_fp, TRAIN_OFST, SEEK_SET) == EOF)
+  if (fseek(x_fp, x_ofst, SEEK_SET) == EOF ||
+      fseek(y_fp, y_ofst, SEEK_SET) == EOF)
     perror("fseek"), exit(EXIT_FAILURE);
 
-  FILE *y_fp = fopen(y_path, "r");
-  if (y_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
-  if (fseek(y_fp, TEST_OFST, SEEK_SET) == EOF)
-    perror("fseek"), exit(EXIT_FAILURE);
-
-  struct ex *exs = malloc(sizeof(*exs) * n);
+  struct ex *exs = malloc(sizeof(*exs) * len);
 
   int chr;
-  for (size_t i = 0; i < n; i++) {
+  for (size_t i = 0; i < len; i++) {
     struct ex *ex = exs + i;
 
     if ((chr = fgetc(y_fp)) == EOF)
@@ -75,10 +73,7 @@ struct ex *load_mnist(char *x_path, char *y_path, size_t n) {
     }
   }
 
-  if (fclose(x_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
-
-  if (fclose(y_fp) == EOF)
+  if (fclose(x_fp) == EOF || fclose(y_fp) == EOF)
     perror("fclose"), exit(EXIT_FAILURE);
 
   return exs;
@@ -105,6 +100,7 @@ void mnist_y_dump(y_t y) {
   putchar('\n');
 }
 
+#ifndef __STDC_NO_THREADS__
 struct arg {
   unsigned seed;
   struct ex *exs;
@@ -148,8 +144,8 @@ int worker_thrd(void *arg) {
 #endif
     {
       // standard `rand()` is not required to be thread safe
-      size_t rand = (size_t)rand_r(&seed) * (RAND_R_MAX + 1) + rand_r(&seed);
-      struct ex *ex = a->exs + rand % TRAIN_LEN;
+      size_t idx = rand_r(&seed) * (RAND_R_MAX + (size_t)1) + rand_r(&seed);
+      struct ex *ex = a->exs + idx % TRAIN_LEN;
       mlp_backprop(ex->x, *a->w, ex->y, dw, c);
     }
 
@@ -170,12 +166,13 @@ int worker_thrd(void *arg) {
 
   return 0;
 }
+#endif // __STDC_NO_THREADS__
 
 int main(void) {
   srand(time(NULL));
 
-  struct ex *train_exs = load_mnist(TRAIN_PATHS, TRAIN_LEN);
-  struct ex *test_exs = load_mnist(TEST_PATHS, TEST_LEN);
+  struct ex *train_exs = load_mnist(TRAIN_PATHS, TRAIN_OFSTS, TRAIN_LEN);
+  struct ex *test_exs = load_mnist(TEST_PATHS, TEST_OFSTS, TEST_LEN);
 
   static w_t w;
   static yh_t yh;
@@ -186,6 +183,7 @@ int main(void) {
   ARRAY_FOR(v) elem = 0.0;
   ARRAY_FOR(w) elem = (double)rand() / RAND_MAX - 0.5;
 
+#ifndef __STDC_NO_THREADS__
   mtx_init(&sync_lock, mtx_plain);
   cnd_init(&work_avail), cnd_init(&work_done);
 
@@ -197,11 +195,13 @@ int main(void) {
     args[i] = (struct arg){rand(), train_exs, &w, &dw, &c};
     thrd_create(thrds + i, worker_thrd, args + i);
   }
+#endif
 
   for (int iter = 0; iter < ITERS; iter++) {
     ARRAY_FOR(dw) elem = 0.0;
     *c = 0.0;
 
+#ifndef __STDC_NO_THREADS__
 #ifndef __STDC_NO_ATOMICS__
     exs_left = BATCH;
 #endif
@@ -209,6 +209,17 @@ int main(void) {
     cnd_broadcast(&work_avail);
     while (thrds_working)
       cnd_wait(&work_done, &sync_lock);
+#else
+    for (int ex = 0; ex < BATCH; ex++) {
+      // ISO/IEC 9899:TC3, $7.20.2.1 requires RAND_MAX to be at least 32767
+      size_t idx = rand() * (RAND_MAX + (size_t)1) + rand();
+      struct ex *ex = train_exs + idx % TRAIN_LEN;
+      mlp_backprop(ex->x, w, ex->y, dw, c);
+    }
+
+    ARRAY_FOR(dw) elem /= BATCH;
+    *c /= BATCH;
+#endif
 
     ARRAY_FOR(dw) elem += LAMBDA * w[idx] * w[idx];  // L2 regularization
     ARRAY_FOR(v) elem = elem * BETA - ETA * dw[idx]; // momentum
@@ -218,6 +229,7 @@ int main(void) {
     printf("%*s\n", (int)(*c * 64), "#");
   }
 
+#ifndef __STDC_NO_THREADS__
   thrds_working = EOF;
   cnd_broadcast(&work_avail);
   mtx_unlock(&sync_lock);
@@ -227,10 +239,11 @@ int main(void) {
 
   mtx_destroy(&sync_lock);
   cnd_destroy(&work_avail), cnd_destroy(&work_done);
+#endif
 
   double accuracy = 0.0;
 
-  for (int i = 0; i < TEST_LEN; i++) {
+  for (size_t i = 0; i < TEST_LEN; i++) {
     struct ex *ex = test_exs + i;
     mlp_predict(ex->x, w, yh);
 

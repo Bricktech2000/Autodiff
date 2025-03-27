@@ -10,20 +10,21 @@ int main(void) {
 
   struct tensor *b1 = tensor_nans((shape_t){64});
   struct tensor *w1 = tensor_nans((shape_t){*b1->shape, *l0->shape});
-  struct tensor *l1 = tensor_unop(
-      node_relu, MOVE tensor_binop(node_add, REF b1 = COL_TENSOR(b1),
-                                   MOVE tensor_matmul(REF w1, REF l0)));
+  struct tensor *z1 = tensor_binop(node_add, REF b1 = COL_TENSOR(b1),
+                                   MOVE tensor_matmul(REF w1, REF l0));
+  struct tensor *l1 = tensor_unop(node_relu, MOVE z1);
 
   struct tensor *b2 = tensor_nans((shape_t){32});
   struct tensor *w2 = tensor_nans((shape_t){*b2->shape, *l1->shape});
-  struct tensor *l2 = tensor_unop(
-      node_relu, MOVE tensor_binop(node_add, REF b2 = COL_TENSOR(b2),
-                                   MOVE tensor_matmul(REF w2, REF l1)));
+  struct tensor *z2 = tensor_binop(node_add, REF b2 = COL_TENSOR(b2),
+                                   MOVE tensor_matmul(REF w2, REF l1));
+  struct tensor *l2 = tensor_unop(node_relu, MOVE z2);
 
   struct tensor *b3 = tensor_nans((shape_t){10});
   struct tensor *w3 = tensor_nans((shape_t){*b3->shape, *l2->shape});
-  struct tensor *l3 = tensor_softmax(MOVE tensor_binop(
-      node_add, REF b3 = COL_TENSOR(b3), MOVE tensor_matmul(REF w3, REF l2)));
+  struct tensor *z3 = tensor_binop(node_add, REF b3 = COL_TENSOR(b3),
+                                   MOVE tensor_matmul(REF w3, REF l2));
+  struct tensor *l3 = tensor_softmax(MOVE z3);
 
   free(l1), free(l2);
   struct tensor *x = (MOVE l0), *yh = (MOVE l3);
@@ -35,13 +36,9 @@ int main(void) {
                      (struct tensor *[]){w1, w2, w3, b1, b2, b3, NULL});
 
   FILE *p_fp = fopen("mlp-predict.c", "w");
-  if (p_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
   FILE *b_fp = fopen("mlp-backprop.c", "w");
-  if (p_fp == NULL)
-    perror("fopen"), exit(EXIT_FAILURE);
   FILE *h_fp = fopen("mlp.h", "w");
-  if (h_fp == NULL)
+  if (p_fp == NULL || b_fp == NULL || h_fp == NULL)
     perror("fopen"), exit(EXIT_FAILURE);
 
   int visited = 0;
@@ -83,11 +80,7 @@ int main(void) {
   TENSOR_FOR(w) fprintf(b_fp, "dw[%zd] += t%d;\n", idx, node->grad->id);
   fprintf(b_fp, "}\n");
 
-  if (fclose(p_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
-  if (fclose(b_fp) == EOF)
-    perror("fclose"), exit(EXIT_FAILURE);
-  if (fclose(h_fp) == EOF)
+  if (fclose(p_fp) == EOF || fclose(b_fp) == EOF || fclose(h_fp) == EOF)
     perror("fclose"), exit(EXIT_FAILURE);
 
   c->next = NULL, node_free(c, ++visited);
