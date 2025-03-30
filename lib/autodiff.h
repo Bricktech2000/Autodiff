@@ -1,5 +1,9 @@
 #include <stdio.h>
 
+// the main criterion all node types should meet is that their implementation
+// (see runtime.h) should be, up to partial application, either a library call
+// to <math.h> or a builtin operator, reasoning being that the set of floating-
+// point primitives provided by the C language is probably a well-balanced one.
 // clang-format off
 #define NODE_TYPES(LIT_, UNOP, BINOP)                                          \
   LIT_(LIT, lit)                                                               \

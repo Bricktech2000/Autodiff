@@ -1,4 +1,6 @@
-// runtime for `struct node`s. provides implementations for all node types
+// runtime for `struct node`. provides implementations for all node types, with
+// homogeneous naming, so the homomorphism can be established programmatically
+// using the preprocessor
 
 #include <math.h>
 

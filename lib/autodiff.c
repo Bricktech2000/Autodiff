@@ -85,7 +85,7 @@ void node_eval(struct node *node, int visited) {
     node_eval(node->rhs, visited);
 
   switch (node->type) {
-    // see runtim.h
+    // see runtime.h
 #define EVAL_LIT(UC, LC)                                                       \
   case NODE_##UC:                                                              \
     node->val = op_##LC(node->val);                                            \
@@ -108,8 +108,10 @@ void node_eval(struct node *node, int visited) {
 }
 
 void node_gen(FILE *fp, char *decl, char *ref, struct node *node, int visited) {
-  // codegen node into C source code. codegens nothing for `node_lit(NAN)`s, so
-  // they can be used as inputs. make sure to call with a unique `visited`
+  // codegen node into C source code. `decl` and `ref` are format strings that
+  // describe how to declare temporaries and refer to temporaries, respectively.
+  // codegens nothing for `node_lit(NAN)`s, so they can be used as inputs. make
+  // sure to call with a unique `visited`
 
   if (node->visited == visited)
     return;
