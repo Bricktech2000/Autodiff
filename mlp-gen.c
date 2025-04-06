@@ -1,7 +1,6 @@
 #include "lib/autodiff.h"
 #include "lib/tensor.h"
-#include "lib/utils.h"
-#include <stdio.h>
+#include "utils.h"
 #include <stdlib.h>
 
 int main(void) {
@@ -54,7 +53,7 @@ int main(void) {
   TENSOR_FOR(w) fprintf(p_fp, "double t%d = w[%zd];\n", node->id, idx);
   putc('\n', p_fp);
   ++visited;
-  TENSOR_FOR(yh) node_gen(p_fp, "double t%d = ", "t%d", node, visited);
+  TENSOR_FOR(yh) node_codegen(p_fp, "double t%d = ", "t%d", node, visited);
   putc('\n', p_fp);
   TENSOR_FOR(yh) fprintf(p_fp, "yh[%zd] = t%d;\n", idx, node->id);
   fprintf(p_fp, "}\n\n");
@@ -73,8 +72,8 @@ int main(void) {
   TENSOR_FOR(w) fprintf(b_fp, "double t%d = w[%zd];\n", node->id, idx);
   TENSOR_FOR(y) fprintf(b_fp, "double t%d = y[%zd];\n", node->id, idx);
   putc('\n', b_fp);
-  node_gen(b_fp, "double t%d = ", "t%d", c, ++visited);
-  TENSOR_FOR(w) node_gen(b_fp, "double t%d = ", "t%d", node->grad, visited);
+  node_codegen(b_fp, "double t%d = ", "t%d", c, ++visited);
+  TENSOR_FOR(w) node_codegen(b_fp, "double t%d = ", "t%d", node->grad, visited);
   putc('\n', b_fp);
   fprintf(b_fp, "*c += t%d;\n", c->id);
   TENSOR_FOR(w) fprintf(b_fp, "dw[%zd] += t%d;\n", idx, node->grad->id);
@@ -83,6 +82,7 @@ int main(void) {
   if (fclose(p_fp) == EOF || fclose(b_fp) == EOF || fclose(h_fp) == EOF)
     perror("fclose"), exit(EXIT_FAILURE);
 
-  c->next = NULL, node_free(c, ++visited);
+  struct node *nodes = NULL;
+  node_mark(c, &nodes, 0, ++visited), node_free(nodes, visited);
   free(x), free(yh), free(w), free(y);
 }

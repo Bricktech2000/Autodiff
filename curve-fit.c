@@ -1,7 +1,6 @@
 #include "lib/autodiff.h"
 #include "lib/tensor.h"
-#include "lib/utils.h"
-#include <stdio.h>
+#include "utils.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -58,6 +57,7 @@ int main(void) {
 #undef STRINGIZE_INNER
 #undef STRINGIZE
 
-  r2->next = NULL, node_free(r2, ++visited);
+  struct node *nodes = NULL;
+  node_mark(r2, &nodes, 0, ++visited), node_free(nodes, visited);
   free(x), free(yh), free(w), free(y);
 }

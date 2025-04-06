@@ -20,7 +20,7 @@ struct node {
 #undef MKENUM
   int id, visited;        // for node graph traversal
   struct node *lhs, *rhs; // child nodes; may be `NULL` depending on `type`
-  struct node *next;      // for output of `rev_toposort`
+  struct node *next;      // for output of `node_mark`
   struct node *grad;      // for output of `node_grad`
   double val;             // for output of `node_eval`
 };
@@ -36,7 +36,10 @@ NODE_TYPES(DECL_LIT, DECL_UNOP, DECL_BINOP)
 #undef DECL_UNOP
 #undef DECL_BINOP
 
+int node_mark(struct node *node, struct node **head, int count, int visited);
 void node_free(struct node *head, int visited);
+void node_zerograd(struct node *head, int visited);
+void node_codegen(FILE *fp, char *decl_fmt, char *ref_fmt, struct node *node,
+                  int visited);
 void node_eval(struct node *node, int visited);
-void node_gen(FILE *fp, char *decl, char *ref, struct node *node, int visited);
 void node_grad(struct node *node, int visited);

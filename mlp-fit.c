@@ -79,24 +79,22 @@ struct ex *load_mnist(char *x_path, char *y_path, long x_ofst, long y_ofst,
   return exs;
 }
 
-int mnist_y_to_yi(y_t y) {
+int mnist_y_to_yi(y_t *y) {
   int yi = 0;
-  for (int i = 0; i < sizeof(y_t) / sizeof(*y); i++)
-    yi = y[i] > y[yi] ? i : yi;
+  ARRAY_FOR(*y) yi = elem > (*y)[yi] ? idx : yi;
   return yi;
 }
 
-void mnist_x_dump(x_t x) {
-  for (int j = 0; j < 28; j += 2) {
-    for (int i = 0; i < 28; i++)
-      putchar(" .,+*o%@"[(int)(x[28 * j + i] * 8.0)]);
-    putchar('\n');
+void mnist_x_dump(x_t *x) {
+  ARRAY_FOR(*x) {
+    char tone = " .,+*o%@"[(int)(elem * 8.0)];
+    printf("%c%c", tone, tone);
+    (idx + 1) % 28 || putchar('\n');
   }
 }
 
-void mnist_y_dump(y_t y) {
-  for (int i = 0; i < sizeof(y_t) / sizeof(*y); i++)
-    printf("%f ", y[i]);
+void mnist_y_dump(y_t *y) {
+  ARRAY_FOR(*y) printf("%f ", elem);
   putchar('\n');
 }
 
@@ -247,18 +245,20 @@ int main(void) {
     struct ex *ex = test_exs + i;
     mlp_predict(ex->x, w, yh);
 
-    int correct = mnist_y_to_yi(yh) == mnist_y_to_yi(ex->y);
+    int correct = mnist_y_to_yi(&yh) == mnist_y_to_yi(&ex->y);
     accuracy += (double)correct / TEST_LEN;
 
     if (correct)
       continue;
 
-    printf("yh  = "), mnist_y_dump(yh);
-    printf("y   = "), mnist_y_dump(ex->y);
-    printf("yhi = %d\n", mnist_y_to_yi(yh));
-    printf("yi  = %d\n", mnist_y_to_yi(ex->y));
-    mnist_x_dump(ex->x);
+    printf("yh  = "), mnist_y_dump(&yh);
+    printf("y   = "), mnist_y_dump(&ex->y);
+    printf("yhi = %d\n", mnist_y_to_yi(&yh));
+    printf("yi  = %d\n", mnist_y_to_yi(&ex->y));
+    mnist_x_dump(&ex->x);
   }
 
-  printf("MNIST accuracy: %f\n", accuracy);
+  printf("accuracy: %f\n", accuracy);
+
+  free(train_exs), free(test_exs);
 }
