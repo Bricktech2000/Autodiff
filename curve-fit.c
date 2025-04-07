@@ -19,14 +19,14 @@ int main(void) {
 
   int visited = 0;
 
-  struct tensor *x = tensor_nans((shape_t){NPOINTS});
-  struct tensor *w = tensor_nans((shape_t){DEGREE});
-  struct tensor *yh = tensor_repeat(x->shape, node_lit(0.0));
+  struct tensor x = tensor_nans((shape_t){NPOINTS});
+  struct tensor w = tensor_nans((shape_t){DEGREE});
+  struct tensor yh = tensor_repeat(x.shape, node_lit(0.0));
   TENSOR_FOR(w)
   yh = tensor_binop(node_add, MOVE tensor_binop(node_mul, MOVE yh, REF x),
-                    MOVE tensor_repeat(yh->shape, node));
+                    MOVE tensor_repeat(yh.shape, node));
 
-  struct tensor *y = tensor_nans(yh->shape);
+  struct tensor y = tensor_nans(yh.shape);
   struct node *r2 = tensor_r2(REF y, REF yh);
 
   TENSOR_FOR(w) node->grad = node_lit(0.0);
@@ -38,7 +38,7 @@ int main(void) {
   for (int iter = 0; iter < ITERS; iter++) {
     node_eval(r2, ++visited);
     TENSOR_FOR(w) node_eval(node->grad, visited);
-    TENSOR_FOR(w) node->val -= ETA * node->grad->val / shape_size(x->shape);
+    TENSOR_FOR(w) node->val -= ETA * node->grad->val / shape_size(x.shape);
 
     if (iter % 1000 == 0)
       printf("iter %d of %d; r2 %f\n", iter, ITERS, r2->val);
@@ -59,5 +59,5 @@ int main(void) {
 
   struct node *nodes = NULL;
   node_mark(r2, &nodes, 0, ++visited), node_free(nodes, visited);
-  free(x), free(yh), free(w), free(y);
+  free(x.data), free(yh.data), free(w.data), free(y.data);
 }

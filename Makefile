@@ -21,7 +21,7 @@ bin/mlp-%.c: bin/mlp-gen | bin/
 	cd bin/ && ./mlp-gen
 
 bin/mlp-gen: mlp-gen.c bin/tensor.o bin/autodiff.o utils.h | bin/
-	$(CC) $(CFLAGS) -Wno-unused-function -Wno-unused-value \
+	$(CC) $(CFLAGS) -Wno-unused-function -Wno-unused-value -Wno-missing-braces \
 		mlp-gen.c bin/tensor.o bin/autodiff.o -lm -o $@
 
 bin/tensor.o: lib/tensor.c lib/tensor.h lib/autodiff.h | bin/
