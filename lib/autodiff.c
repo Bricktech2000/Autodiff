@@ -6,21 +6,21 @@ static int node_id = 0;
 
 #define DEF_LIT(UC, LC)                                                        \
   struct node *node_##LC(double val) {                                         \
-    struct node *node = malloc(sizeof(*node));                                 \
+    struct node *node = malloc(sizeof *node);                                  \
     *node = (struct node){.type = NODE_##UC, .id = node_id++, .val = val};     \
     return node;                                                               \
   }
 
 #define DEF_UNOP(UC, LC)                                                       \
   struct node *node_##LC(struct node *lhs) {                                   \
-    struct node *node = malloc(sizeof(*node));                                 \
+    struct node *node = malloc(sizeof *node);                                  \
     *node = (struct node){.type = NODE_##UC, .id = node_id++, .lhs = lhs};     \
     return node;                                                               \
   }
 
 #define DEF_BINOP(UC, LC)                                                      \
   struct node *node_##LC(struct node *lhs, struct node *rhs) {                 \
-    struct node *node = malloc(sizeof(*node));                                 \
+    struct node *node = malloc(sizeof *node);                                  \
     *node = (struct node){                                                     \
         .type = NODE_##UC, .id = node_id++, .lhs = lhs, .rhs = rhs};           \
     return node;                                                               \

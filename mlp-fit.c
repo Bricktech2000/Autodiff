@@ -35,7 +35,7 @@
   "MNIST/t10k-images.idx3-ubyte", "MNIST/t10k-labels.idx1-ubyte"
 
 #define ARRAY_FOR(ARRAY)                                                       \
-  for (size_t idx = 0; idx < sizeof(ARRAY) / sizeof(*(ARRAY)); idx++)          \
+  for (size_t idx = 0; idx < sizeof ARRAY / sizeof *(ARRAY); idx++)            \
     for (double elem = (ARRAY)[idx], *_p = &elem; _p;                          \
          (ARRAY)[idx] = elem, _p = NULL)
 
@@ -53,7 +53,7 @@ struct ex *load_mnist(char *x_path, char *y_path, long x_ofst, long y_ofst,
       fseek(y_fp, y_ofst, SEEK_SET) == EOF)
     perror("fseek"), exit(EXIT_FAILURE);
 
-  struct ex *exs = malloc(sizeof(*exs) * len);
+  struct ex *exs = malloc(sizeof *exs * len);
 
   int chr;
   for (size_t i = 0; i < len; i++) {
@@ -61,7 +61,7 @@ struct ex *load_mnist(char *x_path, char *y_path, long x_ofst, long y_ofst,
 
     if ((chr = fgetc(y_fp)) == EOF)
       perror("fgetc"), exit(EXIT_FAILURE);
-    if (chr >= sizeof(ex->y) / sizeof(*ex->y))
+    if (chr >= sizeof ex->y / sizeof *ex->y)
       abort();
     ARRAY_FOR(ex->y) elem = 0.0;
     ex->y[chr] = 1.0;

@@ -1,5 +1,5 @@
-#include "tensor.h"
 #include "autodiff.h"
+#include "tensor.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,8 +26,8 @@ int shape_cmp(size_t *lhs, size_t *rhs) {
 
 struct tensor tensor_alloc(shape_t shape) {
   struct tensor tensor;
-  memcpy(tensor.shape, shape, sizeof(tensor.shape));
-  tensor.data = calloc(shape_size(shape), sizeof(*tensor.data));
+  memcpy(tensor.shape, shape, sizeof tensor.shape);
+  tensor.data = calloc(shape_size(shape), sizeof *tensor.data);
   return tensor;
 }
 
@@ -48,7 +48,7 @@ struct tensor tensor_clone(bool move_tensor, struct tensor tensor) {
     return tensor;
 
   struct tensor clone = tensor_alloc(tensor.shape);
-  memcpy(clone.shape, tensor.shape, sizeof(clone.shape));
+  memcpy(clone.shape, tensor.shape, sizeof clone.shape);
   memcpy(clone.data, tensor.data, shape_size(clone.shape));
   return clone;
 }
@@ -98,7 +98,7 @@ struct tensor tensor_matmul(bool move_lhs, struct tensor lhs, bool move_rhs,
     abort();
 
   shape_t shape = {lhs.shape[0]};
-  memcpy(shape + 1, rhs.shape + 1, sizeof(rhs.shape) - sizeof(*rhs.shape));
+  memcpy(shape + 1, rhs.shape + 1, sizeof rhs.shape - sizeof *rhs.shape);
   struct tensor out = tensor_repeat(shape, node_lit(0.0));
 
   for (size_t i = 0; i < lhs.shape[0]; i++) {
@@ -133,7 +133,7 @@ struct tensor tensor_reshape(shape_t shape, bool move_tensor,
     abort();
 
   (void)move_tensor;
-  memcpy(tensor.shape, shape, sizeof(tensor.shape));
+  memcpy(tensor.shape, shape, sizeof tensor.shape);
   return tensor;
 }
 
@@ -147,7 +147,7 @@ struct tensor tensor_slice(bool move_tensor, struct tensor tensor, size_t idx) {
 
   struct tensor slice = {0};
   memcpy(slice.shape, tensor.shape + 1,
-         sizeof(tensor.shape) - sizeof(*tensor.shape));
+         sizeof tensor.shape - sizeof *tensor.shape);
   slice.data = tensor.data + idx * shape_size(slice.shape);
   return slice;
 }
